@@ -18,6 +18,7 @@ import type { ConversationParseResult, StoredConversation, AnalysisProgress, AIF
 import { parseConversationText, computeStringHash } from '../utils/parser';
 import { saveConversation, findDuplicateConversation, deleteConversation } from '../utils/indexedDb';
 import { runLocalAIAnalysis } from '../utils/localModelService';
+import { persistFindings } from '../utils/persistence';
 
 interface ImportViewProps {
   parseResult: ConversationParseResult | null;
@@ -168,21 +169,11 @@ export const ImportView: React.FC<ImportViewProps> = ({
         (progress) => setAnalysisProgress(progress)
       );
 
-      // Save findings to active conversation in IndexedDB
-      const convoId = parseResult.conversationId;
-      onFindingsExtracted(convoId, findings);
-
-      // If stored, update the stored conversation record
-      const existing = storedConversations.find((c) => c.id === convoId);
-      if (existing) {
-        const updated: StoredConversation = {
-          ...existing,
-          findings,
-          lastAnalyzedAt: new Date().toISOString(),
-        };
-        await saveConversation(updated);
-        onRefreshConversations();
-      }
+      // Always persist findings — creates or updates the conversation in IndexedDB
+      const savedConvo = await persistFindings(parseResult, findings, storedConversations);
+      onFindingsExtracted(savedConvo.id, findings);
+      onRefreshConversations();
+      onSelectConversation(savedConvo);
     } catch (err) {
       setAnalysisError(`Local AI analysis encountered an error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
